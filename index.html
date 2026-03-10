@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Krembo Car Rental – AI Booking Assistant</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; }
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-5px); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    const HQ_PROXY = "https://krembo-hq-proxy.orycovo.workers.dev";
+
+    const SYSTEM_PROMPT = `You are the WhatsApp booking assistant for Krembo Car Rental on Koh Phangan, Thailand. Follow the exact communication style of the Krembo team.
+
+COMPANY: Krembo Car Rental / Krembo Rent, Koh Phangan, Thailand
+Emergency: +66650548921 or +66622420775 | Police: 077377114
+
+STYLE: English only. Short punchy WhatsApp messages. Natural emojis. Warm but efficient.
+
+STEP 1 GREETING:
+"Thank you for contacting Krembo Rent!
+We'll be in touch shortly 😎
+To assist you better, please provide:
+• The dates you would like to rent a car.
+• Number of people in your group.
+• Type of car you are interested in.
+• Ages of any children accompanying you."
+
+STEP 2 DATE CHECK: If TODAY or TOMORROW ask if on island first + hotel/area. If 2+ days away proceed normally.
+
+STEP 3 CARS: When [HQ AVAILABILITY DATA] is present, use it to show real vehicle classes and prices.
+Format: "[Car name] — [price] THB/day x [days] days + 350 cleaning = [total] THB + 10,000 THB refundable deposit. No credit cards 💳"
+Show 2-3 options max, cheapest first. 7-seater for groups over 5 or families with 3+ child seats.
+AVAILABILITY RULES: Only show cars where Available = Yes. If none available, say "Unfortunately we're fully booked for those dates 😔 Try different dates or call us: +66650548921"
+
+DAY COUNT: 24-hour blocks from pickup time. ANY return after pickup time on last day = new day = extra charge. Catch this proactively always.
+
+GROUP SIZE: Baby + seat = full seat. 3+ car seats → always recommend 7-seater (mention luggage + pram). Never offer 5-seater if won't fit safely.
+
+BABY SEATS: FREE. Always mention. Never allow holding baby while driving.
+
+STEP 4 T&Cs (send automatically after price):
+"TERMS AND CONDITIONS
+- Drivers: 25+ years old, full license 3+ years, present original license on delivery
+- No smoking: 4,000 THB fee if violated
+- Full tank provided — return full. Wrong fuel = you pay repairs
+- Rental day: 12:30 Thong Sala Pier to 11:30 next day. Before 11:00 pickup = 24-hour rental
+- Traffic fines your responsibility + 250 THB admin if Krembo pays
+- Accident: call police + Krembo immediately. Emergency: +66650548921. Police: 077377114
+- Non-waivable 10,000 THB excess per accident (not lost if other party at fault + verified by police)
+- No: paying passengers, subletting, racing, towing, off-road
+- Off-limits: Bottle Beach, Haad Yao Beach/East, Wai Nam
+- Report all damage before return
+- Car stays on Koh Phangan only
+- Cancellation: 2 weeks notice = full refund. If slot rebooked = refund. Early return = min 5 days held
+- Payment in cash only (or pre-approved bank transfer)"
+
+AFTER T&Cs: Always end with this exact line — "Please read our Terms and Conditions carefully and let us know if you have any questions 🙏" — NEVER shorten it to "do you have any questions" or any other variation. The full phrase is required every time.
+
+STEP 5 INSURANCE: "All our cars are fully insured 🚗✨ Deductible up to 10,000 THB per claim. Covers you, car, passengers, third parties."
+
+STEP 6 WAIT FOR QUESTIONS. Tyre/window/scratch: "The 10,000 THB deductible means we only use insurance above that. A flat tyre, window or scratch usually costs less — you pay actual cost. Same accident = all under one 10,000 THB 🚗✨"
+
+STEP 7 DOCUMENTS: "To continue, please send:
+• Copy of each driver's plastic license (front + back). No international license needed 🙏
+• Copy of each driver's passport
+• Hotel/villa name on Koh Phangan
+• Email address
+• Pick-up time and location
+• Drop-off time and location"
+
+STEP 8 PAYMENT (after docs approved):
+Most: "3,000 THB booking fee needed (comes off total).
+1. WISE: https://wise.com/invite/ihpc/oryc
+2. STRIPE: https://buy.stripe.com/28E8wQ95vd528dz95D8N207
+💳 Stripe adds 4.75% + ฿10 + 7% VAT (client pays). Use Wise to avoid fees 🙌"
+Israeli (+972/Hebrew): Stripe only.
+Russian (+7/Russian): "Transfer 10,000 RUB to +7 (993) 356-22-13 Tbank. Refunded on pickup day 🙂"
+
+STEP 9: "Your booking is confirmed! 🎉 You'll receive a confirmation email shortly. See you on [date]! 🌴🚗"
+
+TIMING:
+- Hours: 07:30–17:30 at Thong Sala Pier. Other locations ~16:30 (flexible)
+- Standard pickup: 12:30 Thong Sala Pier. Early same/next day = check with team first
+- If customer gives a specific pickup time, accept it and confirm it. Default to 12:30 if no time given.
+- Pier: no signs. Team WhatsApps when on way. Client WhatsApps when ferry approaching. Always ask which ferry.
+- Arriving on island + pickup before 13:30 → tip about hotel check-in at 13:30
+- Delivery times (team confirms): Pier 12:30 | Baan Tai ~13:00 | Haad Rin/Silan/Srithanu/Chaloklum ~13:30
+- Thong Nai Pan: manager confirms day before only
+- Return standard: 11:30 Thong Sala Pier. Extra half-day for 12:30 return.
+- Min 3 days (shorter = manager only, never promise)
+
+LOCATIONS & AREAS ON KOH PHANGAN — know these and use them confidently:
+- Thong Sala: main town, pier area — standard pickup/dropoff point
+- Baan Tai: south coast, near Thong Sala
+- Haad Rin: southeast tip, Full Moon Party beach
+- Srithanu: west coast, yoga area
+- Chaloklum: north coast, fishing village
+- Thong Nai Pan: northeast, remote — requires manager confirmation
+- Mae Haad: northwest
+- Ban Khai: south coast
+- Wok Tum / Ban Tai area: south
+- Haad Yao: west coast beach
+- Common hotels/resorts: Cocohut, Sarikantang, Palita Lodge, Haad Rin House, Lighthouse, Milky Bay, Panviman, Santhiya, Longtail Beach Resort, Bottle Beach Resort, Haad Chao Phao, Rocky Mountain, Anantara, X2 Resort, Paradise Beach Resort
+- If customer mentions any hotel or villa name, accept it as their location even if you don't recognise it — just confirm the area it's in or ask "Which area is that in? 🙏"
+- Never say you don't know a hotel. Always accept the name and confirm delivery to that area.
+
+DRIVERS: 25+ (women 21+), full license 3+ years, national license only, original always present.
+
+ESCALATE (say "Let me check with our team 🙏"): Thong Nai Pan delivery, early pickup (before 12:30 same/next day), rentals SHORTER than 3 days only.
+NEVER escalate for long rentals (1 week, 1 month, 3 months etc.) — these are completely normal and priced automatically by the HQ system. Just use the dates and show the HQ price.
+Never connect to owner. If asked: "I'm here to help! 😊 What can I assist with? 🙏"
+
+HQ API: When [HQ AVAILABILITY DATA] appears, use it for real vehicles and prices. Never invent prices. Only show cars where Available = Yes. The HQ system handles all rental durations automatically — trust the price it returns.`;
+
+    const GREETING = `Thank you for contacting Krembo Rent!
+We'll be in touch shortly 😎
+To assist you better, please provide the following information:
+• The dates you would like to rent a car.
+• Number of people in your group.
+• Type of car you are interested in.
+• Ages of any children accompanying you.`;
+
+    async function fetchHQAvailability(pickupDate, returnDate) {
+      try {
+        const body = new URLSearchParams({
+          pick_up_date: pickupDate, pick_up_time: "12:30:00",
+          return_date: returnDate, return_time: "11:30:00",
+          pick_up_location: "2", return_location: "2", brand_id: "1"
+        });
+        const res = await fetch(`${HQ_PROXY}/car-rental/reservations/dates`, { method: "POST", body });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    function extractDates(text) {
+      const results = [];
+      const today = new Date();
+      const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+      const fmt = d => [String(d.getDate()).padStart(2,"0"), String(d.getMonth()+1).padStart(2,"0"), String(d.getFullYear())];
+      const lower = text.toLowerCase();
+      if (/\btoday\b/.test(lower)) results.push(fmt(today));
+      if (/\btomorrow\b/.test(lower)) results.push(fmt(tomorrow));
+      const re = /\b(\d{1,2})[\/\.\-](\d{1,2})(?:[\/\.\-](\d{2,4}))?\b/g;
+      let m;
+      while ((m = re.exec(text)) !== null) results.push([m[1], m[2], m[3]]);
+      return results;
+    }
+
+    function formatHQData(data) {
+      try {
+        const classes = data?.data?.applicable_classes || [];
+        if (!Array.isArray(classes) || !classes.length) return null;
+        let out = "[HQ AVAILABILITY DATA]\n";
+        for (const v of classes) {
+          const name = v.vehicle_class?.label || "Vehicle";
+          const seatFeature = v.vehicle_class?.features?.find(f => f.label?.toLowerCase().includes("seater"));
+          const seats = seatFeature ? seatFeature.label : "?";
+          const dailyPrice = v.price?.details?.[0]?.base_daily_price_with_taxes?.amount;
+          const dailyDisplay = dailyPrice ? Math.round(parseFloat(dailyPrice)) : "?";
+          const totalDays = v.price?.total_days || "?";
+          const avail = (v.availability?.quantity > 0) ? "Yes" : "No";
+          out += `${name} | ${seats} | ${dailyDisplay} THB/day | ${totalDays} days | Available: ${avail}\n`;
+        }
+        return out + "[END HQ DATA]";
+      } catch(e) { return null; }
+    }
+
+    async function fetchHQSeasons() {
+      try {
+        const res = await fetch(`${HQ_PROXY}/car-rental/seasons?brand_id=1`);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    const C = {
+      dark: "#1A1208", amber: "#E8A020", sand: "#F5EFE0",
+      green: "#52B788", white: "#FFFDF7", muted: "#8C7B5E",
+      border: "#E0D5C0", chat: "#ECE5D8"
+    };
+
+    function KremboChat() {
+      const [msgs, setMsgs] = useState([{ role: "ai", text: GREETING, time: new Date() }]);
+      const [input, setInput] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [qr, setQr] = useState(["I want to book a car 🚗", "What cars do you have?", "Do you deliver to hotels?", "What are your prices?"]);
+      const [hqStatus, setHqStatus] = useState("checking");
+      const history = useRef([{ role: "assistant", content: GREETING }]);
+      const bottomRef = useRef(null);
+      const inputRef = useRef(null);
+
+      useEffect(() => {
+        fetchHQSeasons().then(data => setHqStatus(data ? "connected" : "offline"));
+      }, []);
+
+      useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
+
+      const fmt = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      const getQR = (reply) => {
+        const l = reply.toLowerCase();
+        if (history.current.length <= 2) return ["I want to book a car 🚗", "What cars do you have?", "Do you deliver to hotels?", "What are your prices?"];
+        if (l.includes("dates") || l.includes("group") || l.includes("type of car")) return ["Send my dates", "Just browsing", "Need a 7-seater"];
+        if (l.includes("wise") || l.includes("stripe") || l.includes("payment")) return ["Pay via Wise", "Pay via Stripe", "Pay cash on arrival"];
+        if (l.includes("terms") || l.includes("conditions")) return ["I've read the T&Cs ✅", "I have a question", "Proceed"];
+        if (l.includes("license") || l.includes("passport") || l.includes("document")) return ["Sending documents now", "Question about docs"];
+        return [];
+      };
+
+      const typeMessage = (reply, time) => {
+        const words = reply.split(" ");
+        let i = 0;
+        setMsgs(prev => [...prev, { role: "ai", text: "", time, typing: true }]);
+        const interval = setInterval(() => {
+          i++;
+          const partial = words.slice(0, i).join(" ");
+          setMsgs(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { role: "ai", text: partial, time, typing: i < words.length };
+            return updated;
+          });
+          if (i >= words.length) clearInterval(interval);
+        }, 40);
+      };
+
+      const send = async (text) => {
+        if (!text?.trim() || loading) return;
+        setMsgs(prev => [...prev, { role: "user", text, time: new Date() }]);
+        setQr([]); setInput(""); setLoading(true);
+        history.current.push({ role: "user", content: text });
+
+        let hqCtx = "";
+        const allText = history.current.map(m => m.content).join(" ");
+        const dates = extractDates(allText);
+        if (dates.length >= 2) {
+          try {
+            const yr = new Date().getFullYear();
+            const pd = `${yr}-${String(dates[0][1]).padStart(2,"0")}-${String(dates[0][0]).padStart(2,"0")}`;
+            const rd = `${yr}-${String(dates[1][1]).padStart(2,"0")}-${String(dates[1][0]).padStart(2,"0")}`;
+            const hqData = await fetchHQAvailability(pd, rd);
+            const fmt2 = formatHQData(hqData);
+            if (fmt2) hqCtx = "\n\n" + fmt2;
+          } catch(e) {}
+        }
+
+        const apiMsgs = [...history.current];
+        if (hqCtx) apiMsgs[apiMsgs.length - 1] = { role: "user", content: text + hqCtx };
+
+        try {
+          const res = await fetch(`${HQ_PROXY}/anthropic/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-6",
+              max_tokens: 1024,
+              system: SYSTEM_PROMPT,
+              messages: apiMsgs
+            })
+          });
+          const data = await res.json();
+          const reply = data?.content?.[0]?.text || "Sorry, something went wrong! Please call us: +66650548921 🙏";
+          history.current.push({ role: "assistant", content: reply });
+          setLoading(false);
+          typeMessage(reply, new Date());
+          setTimeout(() => setQr(getQR(reply)), reply.split(" ").length * 40 + 100);
+        } catch {
+          setMsgs(prev => [...prev, { role: "ai", text: "Oops 😅 Please try again or call us: +66650548921", time: new Date() }]);
+          setLoading(false);
+        }
+        setTimeout(() => inputRef.current?.focus(), 50);
+      };
+
+      return (
+        <div style={{ fontFamily: "system-ui,sans-serif", background: C.sand, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <div style={{ width: "100%", maxWidth: 440, background: C.white, borderRadius: 20, boxShadow: "0 8px 40px rgba(0,0,0,0.15)", overflow: "hidden", display: "flex", flexDirection: "column", height: "92vh", maxHeight: 740 }}>
+
+            <div style={{ background: C.dark, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+              <div style={{ width: 42, height: 42, background: C.amber, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: C.dark, flexShrink: 0 }}>KR</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>Krembo Car Rental</div>
+                <div style={{ color: C.amber, fontSize: 11 }}>Koh Phangan · AI Booking Assistant</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 7, height: 7, background: hqStatus === "connected" ? C.green : hqStatus === "offline" ? "#ff6b6b" : C.amber, borderRadius: "50%" }} />
+                <span style={{ color: hqStatus === "connected" ? C.green : hqStatus === "offline" ? "#ff6b6b" : C.amber, fontSize: 11 }}>
+                  {hqStatus === "connected" ? "HQ Live ✓" : hqStatus === "offline" ? "HQ Offline" : "Connecting..."}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 10px", display: "flex", flexDirection: "column", gap: 6, background: C.chat }}>
+              {msgs.map((m, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: m.role === "user" ? "row-reverse" : "row", alignItems: "flex-end", gap: 6 }}>
+                  {m.role === "ai" && (
+                    <div style={{ width: 28, height: 28, background: C.amber, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginBottom: 16 }}>🚗</div>
+                  )}
+                  <div style={{ maxWidth: "78%" }}>
+                    <div style={{
+                      background: m.role === "user" ? C.dark : "#fff",
+                      color: m.role === "user" ? "#fff" : C.dark,
+                      padding: "9px 13px",
+                      borderRadius: m.role === "user" ? "16px 16px 3px 16px" : "16px 16px 16px 3px",
+                      fontSize: 13.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
+                    }}>{m.text}</div>
+                    <div style={{ fontSize: 10, color: C.muted, textAlign: m.role === "user" ? "right" : "left", marginTop: 2, paddingInline: 3 }}>{fmt(m.time)}</div>
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
+                  <div style={{ width: 28, height: 28, background: C.amber, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>🚗</div>
+                  <div style={{ background: "#fff", padding: "10px 14px", borderRadius: "16px 16px 16px 3px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {[0,1,2].map(n => <div key={n} style={{ width: 6, height: 6, background: C.amber, borderRadius: "50%", animation: "bounce 1.2s ease-in-out infinite", animationDelay: `${n*0.2}s` }} />)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!loading && qr.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
+                  {qr.map((q, i) => (
+                    <button key={i} onClick={() => send(q)} style={{ background: "#fff", border: `1.5px solid ${C.amber}`, color: C.dark, borderRadius: 14, padding: "5px 11px", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>{q}</button>
+                  ))}
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            <div style={{ padding: "10px 12px", background: "#fff", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+                placeholder="Type your message..."
+                rows={1}
+                style={{ flex: 1, border: `1.5px solid ${C.amber}`, borderRadius: 18, padding: "9px 14px", fontSize: 13.5, resize: "none", outline: "none", fontFamily: "inherit", background: C.sand, maxHeight: 90, overflowY: "auto" }}
+              />
+              <button onClick={() => send(input)} disabled={loading || !input.trim()} style={{
+                width: 40, height: 40,
+                background: loading || !input.trim() ? C.border : C.amber,
+                border: "none", borderRadius: 12,
+                cursor: loading || !input.trim() ? "default" : "pointer",
+                fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+              }}>➤</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<KremboChat />);
+  </script>
+</body>
+</html>
